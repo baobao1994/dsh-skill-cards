@@ -4,12 +4,12 @@
 
 **把 DeepSeek Harness 的技能目录变成可交互的扇形游戏王卡组。**
 
-*以图片卡片浏览本机技能 · 自定义封面与卡名 · 智能分类 · 扇形卡牌浏览 · 抽卡揭示 · 一键注入当前会话*
+*以图片卡片浏览本机技能 · 自定义封面与卡名 · 智能分类 · 墙 / 扇形双布局 · 抽卡揭示 · 一键注入当前会话*
 
-[![npm version](https://img.shields.io/badge/npm-1.0.3-c9a24b)](https://www.npmjs.com/package/dsh-skill-cards)
+[![npm version](https://img.shields.io/badge/npm-1.1.0-c9a24b)](https://www.npmjs.com/package/dsh-skill-cards)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D20-green.svg)](https://nodejs.org)
-[![tests](https://img.shields.io/badge/tests-95%20passing-brightgreen)](test/)
+[![tests](https://img.shields.io/badge/tests-121%20passing-brightgreen)](test/)
 
 一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件。在**聊天输入框下方**放一个「技能」按钮，同时在**设置 → 技能**里内嵌完整管理器，点开是一个以**图片卡片**呈现的技能浏览弹窗。选中技能后**仅对下一条消息生效**（发送即自动移除）——不动磁盘、不污染全局目录。
 
@@ -21,9 +21,9 @@
 
 ## 📸 效果
 
-| 技能管理 | 扇形卡牌浏览 | 抽卡揭示 |
+| 技能管理 | 卡牌浏览（墙 / 扇形） | 抽卡揭示 |
 | --- | --- | --- |
-| 分类筛选 / 搜索 / 多选 / ★ 常用 | 中央放大 + 两侧弧形展开 + WebGL 星云背景 | 应用后卡背飞入 → 逐张 3D 翻面 |
+| 分类筛选 / 搜索 / 多选 / ★ 常用 | 扇形：中央放大 + 两侧弧形展开 + WebGL 星云背景；墙：4/3/2 列网格 + 悬停 3D 倾斜 | 应用后卡背飞入 → 逐张 3D 翻面 |
 
 ---
 
@@ -53,6 +53,16 @@
 - 背景是 **WebGL 粒子星云**（three.js，随鼠标轻微移动，跟随明暗主题）。
 - **降级行为**：WebGL 不可用 / three.js 加载失败时仅隐藏星云，仍使用扇形布局；系统「减弱动态效果」关闭切换等动态效果并跳过抽卡动画，布局与搜索、多选、改图、应用功能保留。关闭弹窗即释放 GPU。
 - three.js 不在 DSH 客户端模块表里（`require('three')` 会抛错），所以插件**自带一份 UMD 版**（`vendor/three.min.js` v0.152.2），由宿主端以同源经典 `<script>` 提供 —— **不走 CDN，离线可用**。
+
+### 🔀 布局切换（墙 / 扇形）
+
+- **默认扇形**：没设置过偏好时打开就是上面的扇形浏览。工具栏右侧的 **「墙 / 扇」分段按钮**（两个真按钮，带 `aria-pressed`）可随时切换。
+- **墙 = 网格卡墙**：4 / 3 / 2 列响应式铺开全部卡片，悬停有 3D 倾斜，进入墙模式时播**一次**入场波浪（之后不再重播）。墙模式面板高度随内容自适应，3 张卡不会留 82vh 空白。
+- **偏好落盘在宿主端**：写在 `~/.dsh/skill-cards-stats.json` 的保留键 `_prefs`（`{ "layout": "fan" | "wall" }`），跟分类 / 封面一样属于用户数据，可被现有备份 / 迁移流程覆盖。走 `GET/POST /plugins/dsh-skill-cards/prefs`；客户端另用 `localStorage['dsh-skill-cards.layout']` 做首屏镜像，避免读到权威值前闪一下默认布局。
+- **两个入口都生效**：浮层与「设置 → 技能」共享同一个面板组件，切换一处、另一处跟着变；偏好是**用户级**的，换窗口、重启 DSH 都保持。
+- **切换不丢状态**：搜索词、分类筛选、多选全部保留；并保留**当前浏览的那张卡** —— 切到墙会把它滚进视口并短暂描边，切回扇形以它居中。
+- **滚动条策略**：两种布局的卡组区（`.dsh-sc-stage`）都**不显示滚动条**，但滚动能力保留（滚轮 / 触控板 / 聚焦卡组区后的方向键与 PageUp·PageDown）。
+- **非法值不落盘**：`POST /prefs` 收到白名单外的 `layout` 返回 **400 `unknown layout`**，存储保持原值；`GET /prefs` 总是返回补齐默认值的完整对象。
 
 ### 🗂️ 分类 / 常用 / 使用次数
 
@@ -165,7 +175,7 @@ dsh plugin --profile web add "/absolute/path/to/dsh-skill-cards"
 
 1. **打开面板** — 点输入框下方的「技能」按钮，或进 **设置 → 技能**。
 2. **筛选与搜索** — 顶部分类 tab + 搜索框（同时匹配中英文名与描述）。
-3. **浏览** — 打开就停在卡组正中的那张。左右拖动卡牌（鼠标 / 触屏，跟手、松手吸附）、点中央卡两侧的空白、点侧牌直接居中、左右按钮或 **← / →** 都能翻牌。中央卡下方显示完整名称、描述及操作按钮。
+3. **浏览** — 打开就停在卡组正中的那张。左右拖动卡牌（鼠标 / 触屏，跟手、松手吸附）、点中央卡两侧的空白、点侧牌直接居中、左右按钮或 **← / →** 都能翻牌。中央卡下方显示完整名称、描述及操作按钮。工具栏右侧的 **「墙 / 扇」** 可切换到网格卡墙；两种布局都保留搜索、筛选与多选，切换时还会保留当前浏览的那张卡。
 4. **定制** — 中央卡稳定后，悬停其左上角工具栏：★ 设常用 · 译 中文化 · ↺ 还原 · 原 看原文 · 🎨 卡图 · 自定义 换封面与文案；点左下角分类徽章改归类。
 5. **勾选** — 点中央卡面或详情区的勾选按钮切换选中，右上角复选框显示状态，可跨卡牌多选。浏览切换保留勾选；工具栏可全选当前筛选结果 / 清空。
 6. **应用** — 点「应用到本次会话」，看抽卡揭示动画，确认技能已进入本会话。
@@ -237,6 +247,7 @@ cover.png   cover.jpg   cover.jpeg   cover.webp   cover.svg   preview.png   prev
 | `skills?cwd=<path>` | 已安装技能列表 + 合并后的分类表 + **扫描报告**（每个根目录的 `exists` / `found`） |
 | `cards` | 全部自定义卡面配置 |
 | `stats` | 分类 / ★ 常用 / 使用次数 + 自建分类 |
+| `prefs` | 用户 UI 偏好（当前只有 `layout`：`fan` \| `wall`），总是补齐默认值 |
 | `cover?skill=<name>` | 技能目录内的封面图（无则 404） |
 | `image?id=<hash>.<ext>` | 上传图片回读（id 需匹配 `[a-f0-9]{24}\.(png\|jpe?g\|webp\|gif\|svg)`） |
 | `active-session` | 当前活跃会话 id |
@@ -252,6 +263,7 @@ cover.png   cover.jpg   cover.jpeg   cover.webp   cover.svg   preview.png   prev
 | `cards` | `{ name, image?, title?, description?, i18n? }` | 写入卡面配置；`image: ''` 清除，`i18n: null` 清除中文层 |
 | `i18n` | `{ items: [{ name, zh, zhDesc? }] }` | 批量写入中文卡名 |
 | `stats` | `{ name, category?, starred? }` | 局部更新某技能统计 |
+| `prefs` | `{ layout: "fan" \| "wall" }` | 写入 UI 偏好；白名单外的值返回 400，且存储保持原值 |
 | `categories` | `{ action: "add"\|"rename"\|"remove", id?, label? }` | 分类管理 |
 | `image` | raw body + `content-type: image/*` | 上传封面图，返回受保护的 URL |
 
@@ -269,7 +281,7 @@ cover.png   cover.jpg   cover.jpeg   cover.webp   cover.svg   preview.png   prev
 | 文件 | 内容 |
 | --- | --- |
 | `~/.dsh/skill-cards.json` | 卡面配置（封面 URL / 标题 / 描述 / 中文层） |
-| `~/.dsh/skill-cards-stats.json` | 分类 / ★ / 使用次数 / 自建分类（与配置分离，高频写不搅动布局） |
+| `~/.dsh/skill-cards-stats.json` | 分类 / ★ / 使用次数 / 自建分类 / **UI 偏好 `_prefs`**（与配置分离，高频写不搅动布局） |
 | `~/.dsh/skill-cards-images/` | 上传的图片原始字节（按 sha256 前 24 位命名） |
 
 ### 客户端加载契约（给二次开发者）
@@ -309,9 +321,9 @@ dsh-skill-cards/
 │   ├── stats.js          #   分类 / 常用 / 使用次数 + 智能分类建议
 │   └── http.js           #   HTTP 辅助（sameOrigin 闸门 / JSON / 文件）
 ├── client/
-│   └── client.js         # ── 浏览器端：入口按钮 + 设置面板 + 卡片浮层 + 扇形浏览 + 出卡
+│   └── client.js         # ── 浏览器端：入口按钮 + 设置面板 + 卡片浮层 + 墙/扇形双布局 + 出卡
 ├── diagnose/             # ── 脱离 DSH 的自测页（真实 React 渲染）
-└── test/                 # ── node:test 单测（101 个）
+└── test/                 # ── node:test 单测（122 个）
 ```
 
 ---
@@ -320,7 +332,7 @@ dsh-skill-cards/
 
 ```bash
 npm install      # 无运行时依赖，仅为 diagnose 页拉取 React UMD
-npm test         # node --test，101 个用例
+npm test         # node --test，122 个用例
 npm run check    # 对所有源码做 node --check 语法校验
 PORT=43691 npm run diagnose # 启动独立自测页 http://127.0.0.1:43691/diagnose/
 ```
@@ -345,6 +357,8 @@ PORT=43691 npm run diagnose # 启动独立自测页 http://127.0.0.1:43691/diagn
 | A 窗口应用的技能出现在 B 窗口 | 已修复（1.0.2）。两端都不会「记住」会话，id 随每个请求传递 |
 | 分类菜单被旁边的卡片盖住 / 分类多时选不到最后几项 | 已修复（1.0.3）。菜单现在会抬到相邻卡片之上、按剩余空间限高滚动，并自动朝上/朝下展开 |
 | 中文化后看不到技能原本的名字和描述 | 已修复（1.0.3）。卡面左上角工具栏里的「原」按钮可查看**未翻译的原文**（原始技能名 / 完整描述 / 来源） |
+| 想换回网格卡墙（扇形之前的布局） | 工具栏右侧的「墙 / 扇」分段按钮随时可切，偏好会记住（宿主端 `_prefs`，见[布局切换](#-布局切换墙--扇形)）。默认是扇形 |
+| 切牌时卡片底部的分类标签闪动 | 已修复（1.1.0）。标签改为恒挂载、过渡期只摘掉交互能力，不再卸载重挂，`.gc-stats` 行不再重排 |
 | 卡片列表为空 | 技能没放在已识别的技能根目录（见上文表格）。面板会列出本次扫描过的目录，注意看哪个标红 |
 | 卡片没有插画 | 目录内没有 `cover.*` / `preview.*` 文件。用卡面左上角工具栏里的「自定义」按钮上传或填 URL |
 | 没有星云或切换动画 | WebGL 不可用 / three.js 加载失败会隐藏星云；「减弱动态效果」会关闭动画。扇形布局与操作仍然保留 |
@@ -361,7 +375,7 @@ PORT=43691 npm run diagnose # 启动独立自测页 http://127.0.0.1:43691/diagn
    - ✅ → client.js 在真实 React 下渲染正常 → 问题在 DSH 宿主侧。
    - ❌ → 把红字与浏览器控制台（F12 → Console）报错反馈回来。
 
-诊断页支持 `?count=0`、`?count=1`、`?count=2` 和 `?count=95`，分别检查空结果、单卡、首尾边界和大卡组。例：<http://127.0.0.1:43691/diagnose/?count=95>。检查「打开即在正中且左右对称」「鼠标 / 触屏拖动跟手、松手吸附」「点两侧空白翻页」「侧牌点击」「中央勾选」「滚动条隐藏但可滚」「窗口缩放」「详情与分类弹层」，并确认拖动、点空白都不会误勾选。想要自动化回归，可复用本地脚本 `.shots/fan-check.mjs`（headless Chrome + CDP，零依赖，文件头注释里写了启动命令；`.shots/` 已 gitignore，不入库）。本次改动即用它跑了 35 条断言。
+诊断页支持 `?count=0`、`?count=1`、`?count=2` 和 `?count=95`，分别检查空结果、单卡、首尾边界和大卡组。例：<http://127.0.0.1:43691/diagnose/?count=95>。检查「打开即在正中且左右对称」「鼠标 / 触屏拖动跟手、松手吸附」「点两侧空白翻页」「侧牌点击」「中央勾选」「滚动条隐藏但可滚」「窗口缩放」「详情与分类弹层」「两种布局各自可用、切换后偏好保持（宿主端 `_prefs`）」，并确认拖动、点空白都不会误勾选。想要自动化回归，可复用本地脚本 `.shots/fan-check.mjs`（headless Chrome + CDP，零依赖，文件头注释里写了启动命令；`.shots/` 已 gitignore，不入库）。断言数随脚本增长，以脚本内的 `check()` 调用为准。
 
 该页自带本地 React 副本，只需一次 `PORT=43691 npm run diagnose`，无需联网。
 
@@ -375,10 +389,10 @@ PORT=43691 npm run diagnose # 启动独立自测页 http://127.0.0.1:43691/diagn
 npm run check && npm test
 ```
 
-- 新增功能同时补 `test/` 下的用例（当前 101 个）。
+- 新增功能同时补 `test/` 下的用例（当前 122 个）。
 - 遵守上方 **架构约束** 五条，尤其是会话作用域与路由前缀。
 - UI 改动请在支持 / 不支持 WebGL、以及「减弱动态效果」三种情形下各验一次。
-- 中文与英文 README 同步更新。
+- **UI 文案保持中英双语**（`locale.register` 的 zh / en 两份都要加）；README 目前只维护中文版。
 
 **完整流程见 [CONTRIBUTING.md](CONTRIBUTING.md)** —— 里面记录了本项目特有的加载契约、会导致静默失效的坑，以及发版注意事项。
 

@@ -342,8 +342,13 @@ test('the face button wraps the face only — no button inside a button', () => 
   assert.ok(hit, 'the face button needs its own rule')
   assert.match(hit[1], /flex:1 1 auto/, 'the face button must fill the card')
   // the one accepted exception, and it must stay keyboard-operable
-  assert.match(source, /function gcCatChip\(\{ catLabel, catOpen, onToggle, anchorRef \}\)/)
+  assert.match(source, /function gcCatChip\(\{[^)]*interactive = true[^)]*\}\)/)
   assert.match(source, /className: 'dsh-sc-cat', role: 'button', tabIndex: 0/)
+  // While the current card is settling, the chip must stay MOUNTED and only lose
+  // its interaction: it shares the .gc-stats row with the ATK numbers, so
+  // unmounting it reflows that row — which reads as a flicker on every switch.
+  assert.match(source, /if \(!interactive\) \{\n\s+return e\('span', \{ className: 'dsh-sc-cat is-inert' \}/)
+  assert.match(cssBlock(), /\.dsh-sc-cat\.is-inert \{[^}]*pointer-events:none/)
 })
 
 test('the card container keeps the identity the rest of the panel relies on', () => {

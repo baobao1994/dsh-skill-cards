@@ -274,6 +274,23 @@ test('the fan bounds mounted cards and makes transparent buffers noninteractive'
   }
 })
 
+test('the current card keeps its category chip mounted while it settles', () => {
+  // 切牌瞬间当前卡进入 480ms 的"不稳定"窗口：interactive 关闭（不许开分类弹层，
+  // 弹层坐标要在卡牌稳定后测量），但 isCurrent 必须仍为 true —— 否则分类标签会被
+  // 卸载重挂，.gc-stats 行重排，用户看到"闪一下"。
+  const fan = mountFan(skills(9))
+  fan.step(1)
+  const cardOf = (name) => fan.slots.find((slot) => slot.children[0].props.skill.name === name).children[0]
+  assert.equal(cardOf(fan.current).props.isCurrent, true, 'chip stays mounted while settling')
+  assert.equal(cardOf(fan.current).props.interactive, false, 'but must not open its popover yet')
+  fan.settle()
+  assert.equal(cardOf(fan.current).props.isCurrent, true)
+  assert.equal(cardOf(fan.current).props.interactive, true, 'and becomes interactive once settled')
+  // 侧牌维持原来的纯文本标签（不挂 chip），外观不变。
+  const side = fan.slots.find((slot) => slot.children[0].props.skill.name !== fan.current && slot.props.style.opacity > 0)
+  assert.equal(side.children[0].props.isCurrent, false, 'side cards keep the plain label')
+})
+
 test('the fan opens with the middle card centered, whatever the library size', () => {
   assert.equal(mountFan(skills(1)).current, 'skill-0')
   assert.equal(mountFan(skills(2)).current, 'skill-0')

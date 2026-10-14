@@ -245,7 +245,26 @@ window.__ModuleLoader__.load({
 .dsh-sc-grid .dsh-sc-card-wrap { contain:layout; }
 
 /* 扇形只变换外层，卡面、详情与业务勾选仍复用原组件。 */
-.dsh-sc-panel.has-cards { height:82vh; }
+/* 固定高度只给扇形：它必须拿到确定高度才能算卡位坐标。墙是内容自适应 +
+   .dsh-sc-panel 自带的 max-height:82vh（否则只有 3 张卡时也会撑出 82vh 空白）。 */
+.dsh-sc-panel.has-cards[data-layout="fan"] { height:82vh; }
+
+/* ── 布局切换（墙 / 扇形）────────────────────────────────────────────────── */
+.dsh-sc-layout { display:inline-flex; align-items:center; gap:2px; padding:2px;
+  border-radius:9px; background:var(--sc-shell-2); border:1px solid var(--sc-line); }
+.dsh-sc-layout button { cursor:pointer; font:inherit; font-size:11.5px; padding:4px 10px;
+  border-radius:7px; border:1px solid transparent; background:transparent; color:var(--sc-ink-2);
+  transition:color .12s ease, background .12s ease, border-color .12s ease; }
+.dsh-sc-layout button:hover { color:var(--sc-gold-hi); }
+.dsh-sc-layout button[aria-pressed="true"] { background:var(--sc-shell); border-color:var(--sc-gold);
+  color:var(--sc-gold-hi); }
+.dsh-sc-layout button:focus-visible { outline:2px solid var(--sc-gold); outline-offset:1px; }
+/* 切换布局时给「当前浏览的那张卡」一个短暂描边：墙模式下用来指认它落在哪。 */
+.dsh-sc-card-wrap.focus-flash { animation:dshScFocusFlash .7s ease; }
+@keyframes dshScFocusFlash {
+  0%, 100% { box-shadow:none; }
+  25% { box-shadow:0 0 0 3px var(--sc-gold, #c9a24b); }
+}
 .dsh-sc-fan { position:relative; z-index:1; min-width:0; }
 .dsh-sc-fan-hand { position:relative; touch-action:pan-y; isolation:isolate;
   /* 点空白翻页与拖动翻页都是直接操作：光标先给出提示，拖动时不要选中卡面文字。 */
@@ -291,6 +310,8 @@ window.__ModuleLoader__.load({
 }
 @media (prefers-reduced-motion: reduce) {
   .dsh-sc-fan-slot { transition:none; }
+  /* 减弱动态效果下不播脉冲，改成静态描边（JS 700ms 后照旧摘掉）。 */
+  .dsh-sc-card-wrap.focus-flash { animation:none; box-shadow:0 0 0 3px var(--sc-gold, #c9a24b); }
 }
 
 /* ── card ────────────────────────────────────────────────────────────────── */
@@ -717,6 +738,8 @@ window.__ModuleLoader__.load({
   background:rgba(255,255,255,.05); color:var(--sc-ink-2); border:1px solid var(--sc-line-soft);
   transition:border-color .12s ease, color .12s ease; }
 .dsh-sc-cat:hover { border-color:var(--sc-line); color:var(--sc-gold-hi); }
+/* 切牌过渡中的当前卡：同一个盒子，只是不可交互（别给手型，别吃指针）。 */
+.dsh-sc-cat.is-inert { cursor:inherit; pointer-events:none; }
 .dsh-sc-managecats { cursor:pointer; padding:6px 12px; border-radius:8px; font-size:11.5px; font-family:inherit;
   background:transparent; color:var(--sc-ink-2); border:1px dashed var(--sc-line); }
 .dsh-sc-managecats:hover { color:var(--sc-gold-hi); border-color:var(--sc-gold);
@@ -899,6 +922,7 @@ window.__ModuleLoader__.load({
         selectAll: '全选', clear: '清空', selected: '已选', noneSelected: '未选择',
         previousCard: '上一张', nextCard: '下一张', browseCards: '浏览技能卡牌',
         fanHint: '拖动卡牌左右滑动 · 点两侧空白翻一张 · 点中央卡勾选 · 侧牌居中 · 方向键可用',
+        layoutGroup: '布局', layoutWall: '墙', layoutFan: '扇形',
         selectCard: '勾选技能', deselectCard: '取消勾选', favoriteCard: '设为常用', unfavoriteCard: '取消常用',
         apply: '应用到本次会话', applying: '正在应用…',
         setImage: '自定义', imgTitle: '标题', imgDesc: '描述', imageUrl: '图片 URL（可选）',
@@ -934,6 +958,7 @@ window.__ModuleLoader__.load({
         selectAll: 'Select all', clear: 'Clear', selected: 'Selected', noneSelected: 'None selected',
         previousCard: 'Previous card', nextCard: 'Next card', browseCards: 'Browse skill cards',
         fanHint: 'Drag the cards or click the sides to browse · Click the center to select · Arrow keys work',
+        layoutGroup: 'Layout', layoutWall: 'Wall', layoutFan: 'Fan',
         selectCard: 'Select skill', deselectCard: 'Deselect skill', favoriteCard: 'Favorite', unfavoriteCard: 'Unfavorite',
         apply: 'Apply to this session', applying: 'Applying…',
         setImage: 'Customize', imgTitle: 'Title', imgDesc: 'Description', imageUrl: 'Image URL (optional)',
@@ -1764,7 +1789,14 @@ ${draft}`
     }
 
     /** Category chip anchored on the card's stats row (opens the popover). */
-    function gcCatChip({ catLabel, catOpen, onToggle, anchorRef }) {
+    function gcCatChip({ catLabel, catOpen, onToggle, anchorRef, interactive = true }) {
+      // 切牌期间「当前卡」不能开分类弹层（弹层坐标要在卡牌稳定后测量），但**不能
+      // 卸载这个标签**：它在 .gc-stats 行里与 ATK 数值同一行，卸载重挂会让整行
+      // 重排 —— 表现为分类标签与数值"闪一下"。所以非交互态保留同一个元素与样式，
+      // 只摘掉 role/tabIndex/事件（纯视觉），DOM 节点与盒子完全不变。
+      if (!interactive) {
+        return e('span', { className: 'dsh-sc-cat is-inert' }, catLabel || '分类')
+      }
       return e('span', {
         className: 'dsh-sc-cat', role: 'button', tabIndex: 0,
         // The ref lets the popover exempt its own trigger from the outside-click
@@ -2007,7 +2039,7 @@ ${draft}`
        them changed. Memo only pays off because every prop below is referentially
        stable — the handlers are useCallback'd and `skill` is a memoised object,
        so an unchanged card really does bail out. */
-    const Card = React.memo(function Card({ skill, custom, selected, interactive = true, onToggle, onSetImage, onTranslate, onResetI18n, onArtPrompt, t, catDefs, onStar, onCategory }) {
+    const Card = React.memo(function Card({ skill, custom, selected, interactive = true, isCurrent = true, onToggle, onSetImage, onTranslate, onResetI18n, onArtPrompt, t, catDefs, onStar, onCategory }) {
       const effectiveTitle = custom?.i18n?.zh || custom?.title || skill.name
       const effectiveDesc = custom?.i18n?.zhDesc || custom?.description || skill.description || ''
       const [imgError, setImgError] = useState(false)
@@ -2127,13 +2159,16 @@ ${draft}`
                   uses,
                   lv,
                   sr,
-                  catChip: interactive ? gcCatChip({
+                  // 当前卡**始终**挂 chip（只切交互能力，避免切牌时卸载重排）；
+                  // 侧牌不挂，沿用 gcCardChildren 的纯文本标签，外观与原来一致。
+                  catChip: isCurrent ? gcCatChip({
                     catLabel,
                     catOpen,
                     anchorRef: catAnchorRef,
                     // 200px fits every category label; 300px is roughly eight rows
                     // before the panel starts scrolling.
                     onToggle: () => togglePop('cat', catAnchorRef, 200, 300),
+                    interactive,
                   }) : null,
                 }))),
           ),
@@ -2257,6 +2292,23 @@ ${draft}`
       return Math.max(-Math.min(index, FAN_DRAG_MAX), Math.min(Math.min(total - 1 - index, FAN_DRAG_MAX), units))
     }
 
+    /* ── 布局偏好：扇形（默认）或网格卡墙 ─────────────────────────────────────
+       宿主端 `/prefs` 是权威值（跟分类/封面一样落在 ~/.dsh 里，换入口、换窗口、
+       重启都跟着走）；localStorage 只是首屏镜像，避免读到权威值前先闪一下默认
+       布局。默认值必须与 lib/stats.js 的 PREF_DEFAULTS.layout 一致（有单测守着）。 */
+    const DEFAULT_LAYOUT = 'fan'
+    const LAYOUTS = ['fan', 'wall']
+    const LAYOUT_STORAGE_KEY = 'dsh-skill-cards.layout'
+    /** 只认白名单值：脏镜像/脏响应一律落回默认。 */
+    const normalizeLayout = (value) => (LAYOUTS.includes(value) ? value : DEFAULT_LAYOUT)
+    function readCachedLayout() {
+      // 隐私模式 / 沙箱里访问 localStorage 本身就可能抛，所以连读取都要兜住。
+      try { return normalizeLayout(window.localStorage?.getItem(LAYOUT_STORAGE_KEY)) } catch { return DEFAULT_LAYOUT }
+    }
+    function cacheLayout(value) {
+      try { window.localStorage?.setItem(LAYOUT_STORAGE_KEY, value) } catch { /* 存不下不影响功能 */ }
+    }
+
     function fanPose(offset, metrics) {
       const distance = Math.abs(offset)
       return {
@@ -2268,10 +2320,55 @@ ${draft}`
       }
     }
 
-    function CardFan({ skills, selected, t, ...cardProps }) {
+    /* ── 布局二：网格卡墙 ─────────────────────────────────────────────────────
+       扇形之前的老布局，恢复成一个独立组件：两种布局只共用 Card 与各 handler，
+       互不干扰 —— 入场波浪与悬停 3D 倾斜都只发生在墙里，不会和扇形的卡位
+       transform 抢（扇形那边显式把卡面 transform 归零）。
+
+       入场波浪的 deps 刻意不含 `skills`：每敲一次搜索都重播一次波浪是踩过的坑，
+       只在进入墙模式（本组件挂载）时播一次。 */
+    function CardWall({ skills, selected, t, frozen = false, ...cardProps }) {
+      const gridRef = useRef(null)
+      const prefersReduced = typeof window !== 'undefined' && window.matchMedia
+        ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        : false
+      const [entrance, setEntrance] = useState(() => !prefersReduced)
+      // 波浪跑完就摘掉类名：留着会让每张卡各挂一个合成器动画，也会和悬停倾斜抢 transform。
+      useEffect(() => {
+        if (!entrance) return
+        const id = setTimeout(() => setEntrance(false), 620 + 400 + 80)
+        return () => clearTimeout(id)
+      }, [entrance])
+      // 悬停倾斜（事件委托在容器上，逐卡不挂监听）。真实 DOM 的异常绝不能把整个
+      // 面板打成空白 —— 这是"点开一闪而过"那个 bug 的成因，所以照旧 try/catch。
+      // deps 里的 skills 不能省：initCard3D 用「当时查到的卡片」做 Set 快照（cardSet），
+      // 过滤后新挂载的卡不在快照里、悬停会失效；这与入场波浪刻意不含 skills 是两个理由。
+      useEffect(() => {
+        const grid = gridRef.current
+        if (!grid || frozen || !skills.length) return
+        try {
+          const cleanup = initCard3D(grid)
+          return () => { try { cleanup && cleanup() } catch { /* ignore */ } }
+        } catch (err) {
+          console.error('[skill-cards] initCard3D failed:', err)
+          return () => {}
+        }
+      }, [skills, frozen])
+      return e('div', { className: `dsh-sc-grid${entrance ? ' enter' : ''}`, ref: gridRef },
+        skills.map((skill) => e(Card, {
+          ...cardProps, key: skill.name, skill, custom: skill.custom,
+          selected: selected.has(skill.name), t,
+        })))
+    }
+
+    function CardFan({ skills, selected, t, initialFocus = null, onFocusChange, ...cardProps }) {
       // 默认把浏览焦点放在卡组正中：扇形左右各有邻牌，一打开就是完整形态，
       // 而且两个方向都能立刻滑。焦点始终以「名字」保存，排序/过滤后仍跟着同一张卡。
-      const [activeName, setActiveName] = useState(() => (skills.length ? skills[(skills.length - 1) >> 1].name : null))
+      // `initialFocus` 是切回扇形时从墙承接过来的那张（不存在就回落到正中）。
+      const [activeName, setActiveName] = useState(() => {
+        if (initialFocus && skills.some((s) => s.name === initialFocus)) return initialFocus
+        return skills.length ? skills[(skills.length - 1) >> 1].name : null
+      })
       const [size, setSize] = useState({ width: 0, height: 0, availableHeight: 0 })
       const [moving, setMoving] = useState(false)
       // 拖动中的横向位移（px）；null 表示当前没有拖动。
@@ -2282,7 +2379,11 @@ ${draft}`
       // 用名字保存浏览对象；收藏导致排序改变时，仍以同一张卡为中心。
       const activeIndex = Math.max(0, skills.findIndex((s) => s.name === activeName))
       const current = skills[activeIndex]
-      useEffect(() => { setActiveName(current?.name || null) }, [current?.name])
+      // 把浏览焦点报给面板（面板只写 ref，不触发渲染）：切布局时两边靠它对齐。
+      useEffect(() => {
+        setActiveName(current?.name || null)
+        onFocusChange?.(current?.name || null)
+      }, [current?.name, onFocusChange])
       useEffect(() => {
         const el = handRef.current
         if (!el) return
@@ -2422,7 +2523,7 @@ ${draft}`
             style: { width: metrics.cardWidth, height: metrics.cardHeight, marginLeft: -metrics.cardWidth / 2,
               ...fanPose(offset, metrics), pointerEvents: visible ? 'auto' : 'none' },
           }, e(Card, { ...cardProps, skill, custom: skill.custom, selected: selected.has(skill.name), t,
-            interactive: active && !busy, onToggle: browse }))
+            isCurrent: active, interactive: active && !busy, onToggle: browse }))
         })),
         e('div', { className: 'dsh-sc-fan-nav' },
           e('button', { type: 'button', onClick: () => move(-1), disabled: activeIndex === 0, 'aria-label': t('previousCard') }, '←'),
@@ -2944,11 +3045,75 @@ ${draft}`
       const gridRef = useRef(null)
       const canvasRef = useRef(null)
       const fxRef = useRef(null)
+      // 布局偏好：扇形（默认）/ 网格卡墙。初值取本地镜像，挂载后再用宿主
+      // /prefs 的权威值覆盖（见 DEFAULT_LAYOUT 附近的说明）。
+      const [layout, setLayout] = useState(() => readCachedLayout())
+      // 「当前浏览的那张卡」：扇形居中 / 墙里滚动定位都靠它。存 ref 而不是 state ——
+      // 每翻一张牌都重渲染整个面板不值得。
+      const focusRef = useRef(null)
+      const noteFocus = useCallback((name) => { focusRef.current = name }, [])
       const showToast = useCallback((msg) => {
         setToast(msg)
         if (toastTimer.current) clearTimeout(toastTimer.current)
         toastTimer.current = setTimeout(() => setToast(''), 2600)
       }, [])
+
+      // 读宿主权威偏好（与分类/封面同一份存储，换入口、换窗口、重启都跟着走）。
+      // 读失败就保留镜像/默认值 —— 偏好读不到不该在面板上弹错误。
+      useEffect(() => {
+        let alive = true
+        api('/prefs')
+          .then((res) => {
+            if (!alive) return
+            const served = normalizeLayout(res?.prefs?.layout)
+            setLayout(served)
+            cacheLayout(served)
+          })
+          .catch(() => { /* 保留镜像/默认值 */ })
+        return () => { alive = false }
+      }, [])
+
+      // 切换布局：先乐观更新（点了立刻生效），再落盘。落盘失败**不回滚** ——
+      // lib/ 的改动要重启 DSH 才生效，重启前宿主没有 /prefs，回滚会让用户觉得
+      // "切不过去"；本地照切 + 写镜像 + 提示，下次打开仍是这个布局。
+      const chooseLayout = useCallback(async (next) => {
+        const value = normalizeLayout(next)
+        if (value === layout) return
+        setLayout(value)
+        cacheLayout(value)
+        try {
+          const res = await api('/prefs', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ layout: value }),
+          })
+          // 以宿主返回的权威值为准，避免本地状态与存储长期分叉。
+          const served = normalizeLayout(res?.prefs?.layout)
+          setLayout(served)
+          cacheLayout(served)
+        } catch (err) {
+          showToast(`${t('toastFail')}${err.message}`)
+        }
+      }, [layout, showToast, t])
+
+      // 切到墙：把扇形里浏览的那张卡滚进视口并短暂描边，让两边"同一张卡"对得上。
+      // 只滚 stage 自己（不用 scrollIntoView，免得连带滚动宿主页面）。
+      useEffect(() => {
+        if (layout !== 'wall') return
+        const name = focusRef.current
+        const stage = gridRef.current
+        if (!name || !stage) return
+        const card = Array.from(stage.querySelectorAll('.dsh-sc-card')).find((el) => el.dataset.name === name)
+        if (!card) return
+        const target = card.closest('.dsh-sc-card-wrap') || card
+        const stageRect = stage.getBoundingClientRect()
+        const cardRect = target.getBoundingClientRect()
+        const top = stage.scrollTop + (cardRect.top - stageRect.top) - (stageRect.height - cardRect.height) / 2
+        stage.scrollTop = Math.max(0, top)
+        target.classList.add('focus-flash')
+        const id = setTimeout(() => target.classList.remove('focus-flash'), 700)
+        return () => { clearTimeout(id); target.classList.remove('focus-flash') }
+      }, [layout])
 
       // Clear the toast timer when the panel unmounts so a stale `setToast`
       // never fires after it is gone.
@@ -3252,7 +3417,7 @@ ${draft}`
         } catch (err) { setError(`${t('toastFail')}${err.message}`) } finally { setBusy(false) }
       }, [selected, store, t, showToast, onApplyDone, merged])
 
-      return e('div', { className: `dsh-sc-panel${fx ? ' fx' : ''}${filtered.length ? ' has-cards' : ''}` },
+      return e('div', { className: `dsh-sc-panel${fx ? ' fx' : ''}${filtered.length ? ' has-cards' : ''}`, 'data-layout': layout },
         e('div', { className: 'dsh-sc-search-row' },
           skills ? e('span', { className: 'dsh-sc-title-count' }, `${filtered.length}/${skills.length}`) : null,
           e('input', {
@@ -3267,6 +3432,17 @@ ${draft}`
           e('button', { onClick: selectAll, disabled: filtered.length === 0 }, t('selectAll')),
           e('button', { onClick: clear, disabled: selected.size === 0 }, t('clear')),
           e('span', { className: 'dsh-sc-spacer' }),
+          // 布局切换：墙 / 扇形。分段控件用两个真按钮 + aria-pressed（与仓库里
+          // 其它开关一致，不用 role=radio），键盘可 Tab/Enter，方向键仍归卡组区。
+          e('span', { className: 'dsh-sc-layout', role: 'group', 'aria-label': t('layoutGroup') },
+            e('button', {
+              type: 'button', 'aria-pressed': layout === 'wall' ? 'true' : 'false',
+              title: t('layoutWall'), onClick: () => chooseLayout('wall'),
+            }, t('layoutWall')),
+            e('button', {
+              type: 'button', 'aria-pressed': layout === 'fan' ? 'true' : 'false',
+              title: t('layoutFan'), onClick: () => chooseLayout('fan'),
+            }, t('layoutFan'))),
           e('button', { type: 'button', className: 'dsh-sc-managecats', onClick: () => setCatMgrOpen(true), title: t('manageCats') }, t('manageCats')),
           e('button', { type: 'button', className: 'dsh-sc-managecats', onClick: () => setI18nOpen(true), title: '中文化' }, '中文化'),
           e('button', { className: 'dsh-sc-apply', onClick: applyFn, disabled: busy || selected.size === 0 }, busy ? t('applying') : t('apply'))),
@@ -3291,16 +3467,28 @@ ${draft}`
                   : null)
             : e('div', { className: 'dsh-sc-stage', ref: gridRef },
                 e('canvas', { ref: canvasRef, className: 'dsh-sc-fx', 'aria-hidden': 'true' }),
-                e(CardFan, {
-                    skills: filtered, selected, t,
-                    catDefs,
-                    onToggle: toggle, onSetImage: openImageForm,
-                    onTranslate: openTranslate,
-                    onArtPrompt: openArtPrompt,
-                    onResetI18n: runResetI18n,
-                    onStar: toggleStar,
-                    onCategory: setCardCategory,
-                  })),
+                layout === 'wall'
+                  ? e(CardWall, {
+                      skills: filtered, selected, t, catDefs,
+                      frozen: !!editing,
+                      onToggle: toggle, onSetImage: openImageForm,
+                      onTranslate: openTranslate,
+                      onArtPrompt: openArtPrompt,
+                      onResetI18n: runResetI18n,
+                      onStar: toggleStar,
+                      onCategory: setCardCategory,
+                    })
+                  : e(CardFan, {
+                      skills: filtered, selected, t, catDefs,
+                      initialFocus: focusRef.current,
+                      onFocusChange: noteFocus,
+                      onToggle: toggle, onSetImage: openImageForm,
+                      onTranslate: openTranslate,
+                      onArtPrompt: openArtPrompt,
+                      onResetI18n: runResetI18n,
+                      onStar: toggleStar,
+                      onCategory: setCardCategory,
+                    })),
         catMgrOpen ? e(CategoryManager, {
           catDefs, t,
           onAdd: async (label) => {

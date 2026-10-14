@@ -107,6 +107,14 @@ try {
   } else {
     var store = overlay.meta.inject().store
     var applied = []
+    // UI prefs (/prefs). There is no ~/.dsh behind this page, so the fake host
+    // keeps them in memory; a reload starts a fresh page context with empty
+    // memory, so it re-seeds from the client's localStorage mirror. Without that
+    // a reload would answer "no preference" and bounce the user back to the
+    // default layout — something the real host never does, because
+    // lib/index.js always answers a fully populated set (PREF_DEFAULTS).
+    var prefs = { layout: null }
+    try { prefs.layout = window.localStorage.getItem('dsh-skill-cards.layout') } catch (e) { prefs.layout = null }
     window.fetch = function(url, opts){
       function reply(data){ return Promise.resolve({ ok:true, json:function(){ return Promise.resolve(data) } }) }
       if(String(url).indexOf('/active-session')>=0) return reply({ sessionId:'diagnose' })
@@ -117,6 +125,20 @@ try {
         return reply({ results:applied.map(function(name){ return {name:name, ok:true} }) })
       }
       if(String(url).indexOf('/revoke')>=0) { applied = []; return reply({ ok:true }) }
+
+      // Mirrors lib/index.js: GET always answers a complete set, POST merges a
+      // whitelisted patch and answers the authoritative result, and an unknown
+      // value is rejected (so the client's optimistic switch must roll back).
+      if(String(url).indexOf('/prefs')>=0){
+        var method = String((opts && opts.method) || 'GET').toUpperCase()
+        if(method === 'POST'){
+          var patch = {}
+          try { patch = JSON.parse((opts && opts.body) || '{}') } catch(e) { patch = {} }
+          if(patch.layout === 'fan' || patch.layout === 'wall') prefs.layout = patch.layout
+          else return reply({ ok:false })
+        }
+        return reply({ ok:true, prefs:{ layout: prefs.layout } })
+      }
 
       if(String(url).indexOf('/skills')>=0)
         return Promise.resolve({ ok:true, json:function(){ return Promise.resolve({
