@@ -400,6 +400,6 @@ npm run check && npm test
 
 ## 📄 许可
 
-[MIT](LICENSE) © 2026 gww
+[MIT](LICENSE) © 2026 baobao1994
 
 本插件与 DeepSeek 官方无隶属关系。技能内容由各自作者所有。
